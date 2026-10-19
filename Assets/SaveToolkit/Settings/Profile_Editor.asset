@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c9da43881ba04153b891a64d57c9a34b, type: 3}
+  m_Name: Profile_Editor
+  m_EditorClassIdentifier: SaveToolkit.Runtime::SaveToolkit.SaveProfile
+  Storage: 0
+  SaveDirectory: Saves
+  Format: 0
+  IndentedJson: 1
+  Compression: 0
+  EnableEncryption: 0
+  EncryptionPassphrase: 
+  EncryptionSalt: 
+  EnableBackup: 1
+  BackupCount: 2
+  DataVersion: 1
+  SlotCount: 3
+  DefaultSlot: 0
+  AutosaveOnPause: 0
+  AutosaveOnFocusLost: 0
+  AutosaveOnQuit: 1
+  AutosaveIntervalSeconds: 0
+  EnableDebugLogs: 1

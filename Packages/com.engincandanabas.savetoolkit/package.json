@@ -1,0 +1,35 @@
+{
+  "name": "com.engincandanabas.savetoolkit",
+  "version": "0.2.0",
+  "displayName": "Save Toolkit",
+  "description": "ScriptableObject-configured save system for mobile and Steam games: per-platform/store profiles, JSON or MessagePack, GZip, AES-256 + HMAC, rotating backups with corruption recovery, data migrations, save slots, async saves and autosave. Low-allocation pipeline built on pooled buffers.",
+  "unity": "2022.3",
+  "author": {
+    "name": "engincandanabas",
+    "url": "https://github.com/engincandanabas"
+  },
+  "license": "MIT",
+  "keywords": [
+    "save",
+    "load",
+    "persistence",
+    "serialization",
+    "messagepack",
+    "encryption",
+    "mobile",
+    "steam"
+  ],
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
+  "documentationUrl": "https://github.com/engincandanabas/Unity-Save-Toolkit#readme",
+  "changelogUrl": "https://github.com/engincandanabas/Unity-Save-Toolkit/blob/main/Packages/com.engincandanabas.savetoolkit/CHANGELOG.md",
+  "licensesUrl": "https://github.com/engincandanabas/Unity-Save-Toolkit/blob/main/Packages/com.engincandanabas.savetoolkit/LICENSE.md",
+  "samples": [
+    {
+      "displayName": "Basic",
+      "description": "SaveController prefab, a PlayerProgress demo (sync + async) and a SaveableBehaviour example.",
+      "path": "Samples~/Basic"
+    }
+  ]
+}

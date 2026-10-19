@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: df1551e90aaaf02429c2c09aca47c3c9, type: 3}
+  m_Name: SaveSettings
+  m_EditorClassIdentifier: SaveToolkit.Runtime::SaveToolkit.SaveSettings
+  EditorProfile: {fileID: 11400000, guid: 14763d01ac504e34a8293641dddaa71b, type: 2}
+  MobileProfile: {fileID: 11400000, guid: 0d67e0eb69fe4cc38a3678a7aa6f4b23, type: 2}
+  DesktopProfile: {fileID: 11400000, guid: e4e8108df688424e982c4aab916c2e71, type: 2}
+  FallbackProfile: {fileID: 11400000, guid: e4e8108df688424e982c4aab916c2e71, type: 2}
+  OverrideProfile: {fileID: 0}

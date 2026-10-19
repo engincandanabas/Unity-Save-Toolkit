@@ -1,0 +1,8 @@
+<linker>
+    <!-- [assembly: Preserve] already covers these when link.xml in packages
+         is ignored by older Unity versions. Add your own save data types or
+         assemblies to a link.xml under Assets. -->
+    <assembly fullname="SaveToolkit.Runtime" preserve="all" />
+    <assembly fullname="SaveToolkit.MessagePack" preserve="all" ignoreIfMissing="1" />
+    <assembly fullname="MessagePack" preserve="all" ignoreIfMissing="1" />
+</linker>
