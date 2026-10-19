@@ -21,8 +21,9 @@ namespace SaveToolkit.Editor
             if (settings == null)
                 return;
 
-            NamedBuildTarget target = NamedBuildTarget.FromBuildTargetGroup(report.summary.platformGroup);
-            string define = settings.FindStoreDefine(PlayerSettings.GetScriptingDefineSymbols(target));
+            // Player Settings + active Build Profile defines. Defines passed only
+            // through BuildPlayerOptions.extraScriptingDefines are not visible here.
+            string define = settings.FindStoreDefine(SaveSettings.GetEditorDefines(report.summary.platformGroup));
 
             if (settings.BakedStoreDefine == define)
                 return;

@@ -77,14 +77,32 @@ namespace SaveToolkit
         {
             if (instance != null && instance != this)
             {
-                Destroy(gameObject);
+                // Only remove the whole object when it holds nothing else
+                // (e.g. a shared "Systems" prefab placed in every scene).
+                if (GetComponents<Component>().Length <= 2)
+                    Destroy(gameObject);
+                else
+                    Destroy(this);
+
                 return;
             }
 
             instance = this;
 
-            if (transform.parent == null)
-                DontDestroyOnLoad(gameObject);
+            // DontDestroyOnLoad only works on root objects. A controller left
+            // under a scene object would be destroyed on scene load and a
+            // second one created, racing the first one's pending writes.
+            if (transform.parent != null)
+            {
+                Debug.LogWarning(
+                    "[SaveToolkit] SaveController must live on a root object to persist across " +
+                    "scenes; moving it to the scene root.",
+                    this
+                );
+                transform.SetParent(null, true);
+            }
+
+            DontDestroyOnLoad(gameObject);
 
             if (settings == null)
                 settings = Resources.Load<SaveSettings>(SaveSettings.ResourcesPath);

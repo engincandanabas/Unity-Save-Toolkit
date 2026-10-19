@@ -317,20 +317,59 @@ namespace SaveToolkit
                  ex is UnauthorizedAccessException))
             {
                 // Some file systems (or antivirus locks on Windows) reject
-                // File.Replace; fall back to two renames.
+                // File.Replace; fall back to renames. The previous backup is
+                // only deleted once the new file is in place, so a failure
+                // part way (e.g. the target is locked) loses nothing.
+                string previousBackup = null;
+
                 if (backup != null)
                 {
                     if (File.Exists(backup))
-                        File.Delete(backup);
+                    {
+                        previousBackup = backup + ".old";
 
-                    File.Move(destination, backup);
+                        if (File.Exists(previousBackup))
+                            File.Delete(previousBackup);
+
+                        File.Move(backup, previousBackup);
+                    }
+
+                    try
+                    {
+                        File.Move(destination, backup);
+                    }
+                    catch
+                    {
+                        if (previousBackup != null)
+                            File.Move(previousBackup, backup);
+
+                        throw;
+                    }
                 }
                 else
                 {
                     File.Delete(destination);
                 }
 
-                File.Move(source, destination);
+                try
+                {
+                    File.Move(source, destination);
+                }
+                catch
+                {
+                    if (backup != null && !File.Exists(destination))
+                    {
+                        File.Move(backup, destination);
+
+                        if (previousBackup != null)
+                            File.Move(previousBackup, backup);
+                    }
+
+                    throw;
+                }
+
+                if (previousBackup != null)
+                    File.Delete(previousBackup);
             }
         }
 

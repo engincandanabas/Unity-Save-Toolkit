@@ -154,6 +154,21 @@ namespace SaveToolkit.Tests
         }
 
         [Test]
+        public void CorruptedPrefsValue_RecoversFromBackup()
+        {
+            var manager = new SaveManager(new SaveOptions { EnableDebugLogs = false }, storage, new TestLogger());
+            manager.Save("player", new TestData { Level = 1 }, out _);
+            manager.Save("player", new TestData { Level = 2 }, out _);
+
+            // Truncated / hand-edited value: not valid Base64 any more.
+            PlayerPrefs.SetString(rootKey + "/slot_0/player.sav", "STK2:%%%not-base64%%%");
+
+            Assert.IsTrue(manager.TryLoad("player", out TestData loaded, out string note));
+            Assert.AreEqual(1, loaded.Level);
+            StringAssert.Contains("Recovered", note);
+        }
+
+        [Test]
         public void LegacyPlainJsonValue_IsReadable()
         {
             PlayerPrefs.SetString(rootKey + "/player", "{\"Level\":8}");

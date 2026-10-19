@@ -829,7 +829,11 @@ PlayerSettings:
   webGLCloseOnQuit: 0
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    Android: SAVETOOLKIT_MESSAGEPACK
+    Standalone: SAVETOOLKIT_MESSAGEPACK
+    WebGL: SAVETOOLKIT_MESSAGEPACK
+    iPhone: SAVETOOLKIT_MESSAGEPACK
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:

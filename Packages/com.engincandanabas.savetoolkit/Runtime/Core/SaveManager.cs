@@ -45,7 +45,9 @@ namespace SaveToolkit
         private readonly List<ISaveable> loadAllScratch = new List<ISaveable>();
 
         private int activeSlot;
+        private long writeSequence;
         private bool saveAllScratchInUse;
+        private bool loadAllScratchInUse;
 
         /// <exception cref="ArgumentException">The options are invalid.</exception>
         /// <exception cref="InvalidOperationException">The serializer for the format is unavailable.</exception>
@@ -130,12 +132,13 @@ namespace SaveToolkit
                 if (!TrySerialize(key, data, type, serialized, out error))
                     return false;
 
+                long sequence = NextSequence();
                 int slot = ActiveSlot;
                 gate.Wait();
 
                 try
                 {
-                    return WriteEntry(slot, key, serialized.WrittenSegment, out error);
+                    return WriteEntry(slot, key, serialized.WrittenSegment, sequence, out error);
                 }
                 finally
                 {
@@ -263,10 +266,11 @@ namespace SaveToolkit
                 return Task.FromResult(SaveResult.Fail(error));
             }
 
+            long sequence = NextSequence();
             int slot = ActiveSlot;
 
             if (!storage.RequiresMainThread)
-                return WriteOnThreadPoolAsync(slot, key, serialized);
+                return WriteOnThreadPoolAsync(slot, key, serialized, sequence);
 
             // PlayerPrefs must stay on the main thread.
             try
@@ -275,7 +279,7 @@ namespace SaveToolkit
 
                 try
                 {
-                    return Task.FromResult(WriteEntry(slot, key, serialized.WrittenSegment, out error)
+                    return Task.FromResult(WriteEntry(slot, key, serialized.WrittenSegment, sequence, out error)
                         ? SaveResult.Ok()
                         : SaveResult.Fail(error));
                 }
@@ -400,16 +404,21 @@ namespace SaveToolkit
             List<string> errors = null;
             int slot = ActiveSlot;
 
-            // RestoreState may enable/disable objects and modify the registry.
-            loadAllScratch.Clear();
+            // RestoreState may enable/disable objects, modify the registry or
+            // even call LoadAll again, so iterate over a private copy.
+            bool useScratch = !loadAllScratchInUse;
+            List<ISaveable> snapshot = useScratch ? loadAllScratch : new List<ISaveable>(saveables.Count);
+
+            loadAllScratchInUse |= useScratch;
+            snapshot.Clear();
             for (int i = 0; i < saveables.Count; i++)
-                loadAllScratch.Add(saveables[i]);
+                snapshot.Add(saveables[i]);
 
             try
             {
-                for (int i = 0; i < loadAllScratch.Count; i++)
+                for (int i = 0; i < snapshot.Count; i++)
                 {
-                    ISaveable saveable = loadAllScratch[i];
+                    ISaveable saveable = snapshot[i];
                     string key = saveable.SaveKey;
 
                     if (!ValidateKey(key, out string keyError))
@@ -451,7 +460,10 @@ namespace SaveToolkit
             }
             finally
             {
-                loadAllScratch.Clear();
+                snapshot.Clear();
+
+                if (useScratch)
+                    loadAllScratchInUse = false;
             }
 
             error = errors == null ? null : string.Join("\n", errors);
@@ -506,7 +518,40 @@ namespace SaveToolkit
             if (!ValidateSlot(slot, out error))
                 return false;
 
-            return DeleteDirectory(slotDirectories[slot], out error);
+            if (!DeleteDirectory(slotDirectories[slot], out error))
+                return false;
+
+            // v1 saves lived at the root and are migrated into the default
+            // slot on load; without this a "new game" could resurrect them.
+            return slot != options.DefaultSlot || DeleteLegacyFiles(out error);
+        }
+
+        private bool DeleteLegacyFiles(out string error)
+        {
+            gate.Wait();
+
+            try
+            {
+                foreach (string name in storage.List(""))
+                {
+                    if (name.EndsWith(".json", StringComparison.Ordinal) ||
+                        name.EndsWith(".dat", StringComparison.Ordinal))
+                        storage.Delete(name);
+                }
+
+                error = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "Delete failed: " + ex.Message;
+                logger.LogError(error);
+                return false;
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         public bool DeleteAll(out string error)
@@ -579,7 +624,7 @@ namespace SaveToolkit
 
                 if (TrySerialize(saveable.SaveKey, state, saveable.StateType, buffer, out string error))
                 {
-                    entries.Add(new PendingWrite(saveable.SaveKey, buffer));
+                    entries.Add(new PendingWrite(saveable.SaveKey, buffer, NextSequence()));
                 }
                 else
                 {
@@ -593,13 +638,27 @@ namespace SaveToolkit
         {
             for (int i = 0; i < entries.Count; i++)
             {
-                if (!WriteEntry(slot, entries[i].Key, entries[i].Buffer.WrittenSegment, out string error))
+                if (!WriteEntry(slot, entries[i].Key, entries[i].Buffer.WrittenSegment, entries[i].Sequence, out string error))
                     AddError(ref errors, error);
             }
         }
 
-        private bool WriteEntry(int slot, string key, ArraySegment<byte> serialized, out string error)
+        /// <param name="sequence">
+        /// Order in which the data was captured. A synchronous save can take
+        /// the gate before an earlier queued async save; the older snapshot
+        /// must not overwrite the newer one.
+        /// </param>
+        internal bool WriteEntry(int slot, string key, ArraySegment<byte> serialized, long sequence, out string error)
         {
+            if (sequence < GetPaths(slot, key).LastWrittenSequence)
+            {
+                if (logger.IsInfoEnabled)
+                    logger.Log("Skipped an older snapshot of '" + key + "'; a newer save already landed.");
+
+                error = null;
+                return true;
+            }
+
             PooledBufferWriter compressed = null;
             PooledBufferWriter encrypted = null;
 
@@ -638,6 +697,7 @@ namespace SaveToolkit
                 }
 
                 storage.Write(paths.Main, header, payload, backup);
+                paths.LastWrittenSequence = sequence;
 
                 if (logger.IsInfoEnabled)
                     logger.Log("Save completed: " + key);
@@ -668,7 +728,7 @@ namespace SaveToolkit
             }
         }
 
-        private async Task<SaveResult> WriteOnThreadPoolAsync(int slot, string key, PooledBufferWriter serialized)
+        private async Task<SaveResult> WriteOnThreadPoolAsync(int slot, string key, PooledBufferWriter serialized, long sequence)
         {
             try
             {
@@ -680,7 +740,7 @@ namespace SaveToolkit
                 try
                 {
                     return await Task.Run(() =>
-                            WriteEntry(slot, key, serialized.WrittenSegment, out string error)
+                            WriteEntry(slot, key, serialized.WrittenSegment, sequence, out string error)
                                 ? SaveResult.Ok()
                                 : SaveResult.Fail(error))
                         .ConfigureAwait(false);
@@ -730,20 +790,36 @@ namespace SaveToolkit
         // Read path
         // ------------------------------------------------------------------
 
+        /// <summary>Never throws: storage errors (locked files, I/O faults) become a failed result.</summary>
         private SaveResult<object> ReadEntry(int slot, string key, Type type)
+        {
+            try
+            {
+                return ReadEntryCore(slot, key, type);
+            }
+            catch (Exception ex)
+            {
+                string error = "Load failed for '" + key + "': " + ex.Message;
+                logger.LogError(error);
+                return Failed(error);
+            }
+        }
+
+        private SaveResult<object> ReadEntryCore(int slot, string key, Type type)
         {
             KeyPaths paths = GetPaths(slot, key);
 
             using (var raw = new PooledBufferWriter(1024))
             {
-                object data;
-                bool needsRewrite;
+                object data = null;
+                bool needsRewrite = false;
                 string error;
                 string corruption = null;
 
-                bool mainExists = storage.TryRead(paths.Main, raw);
+                ReadStatus mainStatus = ReadRaw(paths.Main, raw, out error);
+                bool mainExists = mainStatus != ReadStatus.Missing;
 
-                if (mainExists)
+                if (mainStatus == ReadStatus.Found)
                 {
                     switch (Decode(key, raw.WrittenSegment, type, out data, out needsRewrite, out error))
                     {
@@ -755,12 +831,13 @@ namespace SaveToolkit
 
                         case DecodeStatus.Failed:
                             return Failed(error);
-
-                        default:
-                            corruption = error;
-                            logger.LogWarning("'" + paths.Main + "' is corrupted: " + error);
-                            break;
                     }
+                }
+
+                if (mainExists)
+                {
+                    corruption = error;
+                    logger.LogWarning("'" + paths.Main + "' is corrupted: " + error);
                 }
                 else
                 {
@@ -768,10 +845,9 @@ namespace SaveToolkit
 
                     if (legacyPath != null)
                     {
-                        storage.TryRead(legacyPath, raw);
-
-                        if (Decode(key, raw.WrittenSegment, type, out data, out _, out error) != DecodeStatus.Ok)
-                            return Failed(error);
+                        if (ReadRaw(legacyPath, raw, out error) != ReadStatus.Found ||
+                            Decode(key, raw.WrittenSegment, type, out data, out _, out error) != DecodeStatus.Ok)
+                            return Failed(error ?? NotFoundMessage);
 
                         Rewrite(slot, key, data, type, legacyPath);
                         return Loaded(key, data, null);
@@ -780,28 +856,25 @@ namespace SaveToolkit
                     // Rotation always refills bak1 first, so without bak1 there
                     // is nothing to recover: skip probing every backup slot.
                     if (!storage.Exists(paths.Backups[0]))
-                    {
-                        if (logger.IsInfoEnabled)
-                            logger.Log(NotFoundMessage + " (" + key + ")");
-
-                        return new SaveResult<object>(false, null, NotFoundMessage, true, false);
-                    }
+                        return NotFound(key);
                 }
 
                 for (int i = 0; i < paths.Backups.Length; i++)
                 {
                     string backup = paths.Backups[i];
-                    raw.Clear();
+                    ReadStatus status = ReadRaw(backup, raw, out error);
 
-                    if (!storage.TryRead(backup, raw))
+                    if (status == ReadStatus.Missing)
                         continue;
 
-                    DecodeStatus status = Decode(key, raw.WrittenSegment, type, out data, out needsRewrite, out error);
+                    DecodeStatus decoded = status == ReadStatus.Found
+                        ? Decode(key, raw.WrittenSegment, type, out data, out needsRewrite, out error)
+                        : DecodeStatus.Corrupted;
 
-                    if (status == DecodeStatus.Failed)
+                    if (decoded == DecodeStatus.Failed)
                         return Failed(error);
 
-                    if (status == DecodeStatus.Corrupted)
+                    if (decoded == DecodeStatus.Corrupted)
                     {
                         corruption = corruption ?? error;
                         logger.LogWarning("'" + backup + "' is corrupted: " + error);
@@ -824,12 +897,7 @@ namespace SaveToolkit
                 }
 
                 if (!mainExists && corruption == null)
-                {
-                    if (logger.IsInfoEnabled)
-                        logger.Log(NotFoundMessage + " (" + key + ")");
-
-                    return new SaveResult<object>(false, null, NotFoundMessage, true, false);
-                }
+                    return NotFound(key);
 
                 try
                 {
@@ -845,6 +913,35 @@ namespace SaveToolkit
                 logger.LogError(corrupted);
                 return Failed(corrupted);
             }
+        }
+
+        /// <summary>
+        /// Reads a file into <paramref name="raw"/> (cleared first). Storage
+        /// that detects unreadable bytes (e.g. invalid Base64 in PlayerPrefs)
+        /// reports Corrupted so the backup path runs.
+        /// </summary>
+        private ReadStatus ReadRaw(string path, PooledBufferWriter raw, out string corruption)
+        {
+            raw.Clear();
+            corruption = null;
+
+            try
+            {
+                return storage.TryRead(path, raw) ? ReadStatus.Found : ReadStatus.Missing;
+            }
+            catch (SaveCorruptedException ex)
+            {
+                corruption = ex.Message;
+                return ReadStatus.Corrupted;
+            }
+        }
+
+        private SaveResult<object> NotFound(string key)
+        {
+            if (logger.IsInfoEnabled)
+                logger.Log(NotFoundMessage + " (" + key + ")");
+
+            return new SaveResult<object>(false, null, NotFoundMessage, true, false);
         }
 
         private SaveResult<object> Loaded(string key, object data, string note)
@@ -880,6 +977,14 @@ namespace SaveToolkit
                 needsRewrite = false;
                 error = ex.Message;
                 return DecodeStatus.Corrupted;
+            }
+            catch (SaveAuthenticationException ex)
+            {
+                data = null;
+                needsRewrite = false;
+                error = "Save '" + key + "' could not be decrypted: " + ex.Message;
+                logger.LogError(error);
+                return DecodeStatus.Failed;
             }
             catch (SaveVersionException ex)
             {
@@ -987,7 +1092,7 @@ namespace SaveToolkit
                 {
                     serializer.Serialize(data, type, buffer);
 
-                    if (WriteEntry(slot, key, buffer.WrittenSegment, out _) && legacyPath != null)
+                    if (WriteEntry(slot, key, buffer.WrittenSegment, NextSequence(), out _) && legacyPath != null)
                         storage.Delete(legacyPath);
                 }
             }
@@ -1174,6 +1279,11 @@ namespace SaveToolkit
             entries.Clear();
         }
 
+        private long NextSequence()
+        {
+            return Interlocked.Increment(ref writeSequence);
+        }
+
         private static void AddError(ref List<string> errors, string error)
         {
             (errors ?? (errors = new List<string>())).Add(error);
@@ -1227,6 +1337,13 @@ namespace SaveToolkit
             return true;
         }
 
+        private enum ReadStatus
+        {
+            Missing,
+            Found,
+            Corrupted
+        }
+
         private enum DecodeStatus
         {
             Ok,
@@ -1238,11 +1355,13 @@ namespace SaveToolkit
         {
             public readonly string Key;
             public readonly PooledBufferWriter Buffer;
+            public readonly long Sequence;
 
-            public PendingWrite(string key, PooledBufferWriter buffer)
+            public PendingWrite(string key, PooledBufferWriter buffer, long sequence)
             {
                 Key = key;
                 Buffer = buffer;
+                Sequence = sequence;
             }
         }
 
@@ -1254,6 +1373,7 @@ namespace SaveToolkit
             public readonly string[] Backups = new string[SaveOptions.MaxBackupCount];
 
             public bool LegacyMissing;
+            public long LastWrittenSequence = long.MinValue;
 
             private readonly string key;
             private string[] legacy;

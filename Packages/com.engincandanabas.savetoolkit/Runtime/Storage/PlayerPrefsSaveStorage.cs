@@ -209,7 +209,17 @@ namespace SaveToolkit
         private static byte[] DecodeValue(string value)
         {
             if (value.StartsWith(ValuePrefix, StringComparison.Ordinal))
-                return Convert.FromBase64String(value.Substring(ValuePrefix.Length));
+            {
+                try
+                {
+                    return Convert.FromBase64String(value.Substring(ValuePrefix.Length));
+                }
+                catch (FormatException ex)
+                {
+                    // Truncated or edited value: let SaveManager try the backups.
+                    throw new SaveCorruptedException("Stored value is not valid Base64.", ex);
+                }
+            }
 
             // Legacy v1 values: Base64 MessagePack or plain JSON text.
             try

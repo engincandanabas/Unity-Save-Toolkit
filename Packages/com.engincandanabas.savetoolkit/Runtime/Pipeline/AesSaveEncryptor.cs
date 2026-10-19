@@ -11,7 +11,8 @@ namespace SaveToolkit
     {
         void Encrypt(ArraySegment<byte> plain, PooledBufferWriter output);
 
-        /// <exception cref="SaveCorruptedException">Authentication or decryption failed.</exception>
+        /// <exception cref="SaveAuthenticationException">The key does not match the data.</exception>
+        /// <exception cref="SaveCorruptedException">Decryption failed.</exception>
         void Decrypt(ArraySegment<byte> data, PooledBufferWriter output);
     }
 
@@ -122,9 +123,9 @@ namespace SaveToolkit
                 out _);
 
             if (!FixedTimeEquals(expectedMac, new ReadOnlySpan<byte>(data.Array, data.Offset + signedLength, MacSize)))
-                throw new SaveCorruptedException(
+                throw new SaveAuthenticationException(
                     "Encrypted payload failed authentication " +
-                    "(tampered data or wrong passphrase).");
+                    "(wrong passphrase/salt, or tampered data).");
 
             Buffer.BlockCopy(data.Array, data.Offset, s.Iv, 0, IvSize);
 

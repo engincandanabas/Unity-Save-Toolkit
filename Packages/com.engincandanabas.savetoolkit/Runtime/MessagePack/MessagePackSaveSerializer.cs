@@ -47,6 +47,12 @@ namespace SaveToolkit
             return MessagePackSerializer.Deserialize(type, bytes, Options);
         }
 
+        /// <remarks>
+        /// Migrations round-trip through JSON: MessagePack binary (byte[]) and
+        /// extension types (e.g. DateTime timestamps) do not survive it. Keep
+        /// such fields out of migrated MessagePack data, or migrate them as
+        /// strings/numbers.
+        /// </remarks>
         public JToken ToJToken(ReadOnlyMemory<byte> bytes)
         {
             return JToken.Parse(MessagePackSerializer.ConvertToJson(bytes, Options));

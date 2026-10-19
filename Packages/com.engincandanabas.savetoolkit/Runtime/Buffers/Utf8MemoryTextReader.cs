@@ -18,6 +18,7 @@ namespace SaveToolkit
         private readonly Decoder decoder = Utf8.GetDecoder();
         private ReadOnlyMemory<byte> source;
         private int position;
+        private int peekedChar = -1;
         private int pendingChar = -1;
 
         public static Utf8MemoryTextReader Get(ReadOnlyMemory<byte> bytes)
@@ -25,6 +26,7 @@ namespace SaveToolkit
             Utf8MemoryTextReader reader = cached ?? (cached = new Utf8MemoryTextReader());
             reader.decoder.Reset();
             reader.source = bytes;
+            reader.peekedChar = -1;
             reader.pendingChar = -1;
 
             ReadOnlySpan<byte> span = bytes.Span;
@@ -51,11 +53,16 @@ namespace SaveToolkit
 
             int produced = 0;
 
-            if (pendingChar >= 0)
+            if (peekedChar >= 0)
             {
-                buffer[0] = (char)pendingChar;
+                buffer[produced++] = (char)peekedChar;
+                peekedChar = -1;
+            }
+
+            if (pendingChar >= 0 && produced < buffer.Length)
+            {
+                buffer[produced++] = (char)pendingChar;
                 pendingChar = -1;
-                produced = 1;
             }
 
             ReadOnlySpan<byte> remaining = source.Span.Slice(position);
@@ -105,13 +112,15 @@ namespace SaveToolkit
 
         public override int Peek()
         {
-            if (pendingChar >= 0)
-                return pendingChar;
+            if (peekedChar >= 0)
+                return peekedChar;
 
+            // Read() may stash the second half of a surrogate pair in
+            // pendingChar, so the peeked char gets its own slot.
             int value = Read();
 
             if (value >= 0)
-                pendingChar = value;
+                peekedChar = value;
 
             return value;
         }

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.1] - 2026-10-19
+### Fixed
+- A wrong passphrase/salt (e.g. two store builds with different salts sharing a save folder) was treated as corruption and moved the save aside. Authentication failures now leave every file untouched and report "could not be decrypted".
+- A synchronous save that reached the storage gate before an earlier queued async save could be overwritten by that older snapshot. Writes now carry a capture sequence and older snapshots are skipped.
+- Storage errors (locked files, I/O faults) escaped `TryLoad`, `LoadAsync` and `LoadAll` as exceptions; they now return a failed result. Invalid Base64 in PlayerPrefs counts as corruption, so backups are tried.
+- `LoadAll` called from inside a `RestoreState` silently skipped the remaining saveables of the outer call.
+- `SaveController` on a child object was not kept across scenes; it is now moved to the scene root. A duplicate controller removes only itself when its GameObject holds other components.
+- The `File.Replace` fallback could delete the previous backup and then fail; the old backup is now kept until the new file is in place.
+- `DeleteSlot` on the default slot left v1 legacy saves behind, so a "new game" could bring them back.
+- `Utf8MemoryTextReader.Peek` could drop a character.
+- The store build hook and Editor resolution now also read the active Build Profile's defines (Unity 6.2+).
+
+### Notes
+- MessagePack migrations round-trip through JSON: `byte[]` and extension types (e.g. `DateTime`) do not survive them.
+
 ## [0.2.0] - 2026-10-19
 ### Added
 - UPM package `com.engincandanabas.savetoolkit`, installable via Git URL.

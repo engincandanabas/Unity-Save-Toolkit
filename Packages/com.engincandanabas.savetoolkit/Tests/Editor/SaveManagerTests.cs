@@ -277,7 +277,113 @@ namespace SaveToolkit.Tests
 
             SaveManager other = Create(Options(encryption: true, passphrase: "another-passphrase"));
 
-            Assert.IsFalse(other.TryLoad(Key, out TestData _, out _));
+            Assert.IsFalse(other.TryLoad(Key, out TestData _, out string error));
+            StringAssert.Contains("could not be decrypted", error);
+
+            // A key mismatch is not corruption: the save must stay where it is.
+            Assert.IsTrue(File.Exists(FullPath(MainPath())));
+            Assert.IsFalse(File.Exists(FullPath(MainPath() + ".corrupt")));
+            Assert.IsTrue(Create(Options(encryption: true)).TryLoad(Key, out TestData original, out error), error);
+            Assert.AreEqual(3, original.Level);
+        }
+
+        [Test]
+        public void StorageErrors_AreReturnedNotThrown()
+        {
+            var failing = new FailingStorage(storage);
+            var manager = new SaveManager(Options(), failing, logger);
+            manager.Save(Key, new TestData { Level = 1 }, out _);
+
+            failing.FailReads = true;
+
+            Assert.IsFalse(manager.TryLoad(Key, out TestData _, out string error));
+            StringAssert.Contains("simulated", error);
+            Assert.IsFalse(manager.LoadAsync<TestData>(Key).GetAwaiter().GetResult().Success);
+            Assert.IsFalse(manager.LoadAll(new ISaveable[] { new FakeSaveable(Key, 0) }, out _));
+        }
+
+        [Test]
+        public void LoadAll_IsReentrant()
+        {
+            SaveManager manager = Create(Options());
+            var first = new FakeSaveable("a", 1);
+            var second = new FakeSaveable("b", 2);
+            manager.SaveAll(new ISaveable[] { first, second }, out _);
+
+            first.Value = 0;
+            second.Value = 0;
+            bool nested = false;
+            first.OnRestore = () =>
+            {
+                if (nested)
+                    return;
+
+                nested = true;
+                manager.LoadAll(new ISaveable[] { new FakeSaveable("a", 0) }, out _);
+            };
+
+            Assert.IsTrue(manager.LoadAll(new ISaveable[] { first, second }, out string error), error);
+            Assert.AreEqual(1, first.Value);
+            Assert.AreEqual(2, second.Value, "outer LoadAll skipped a saveable after the nested call");
+        }
+
+        [Test]
+        public void OlderQueuedSnapshot_DoesNotOverwriteNewerSave()
+        {
+            // Simulates the race directly: a synchronous save (captured later,
+            // sequence 2) reaches the gate before an async save captured
+            // earlier (sequence 1). Which waiter wins the gate depends on the
+            // runtime's SemaphoreSlim, so the order is forced here.
+            SaveManager manager = Create(Options(backup: false));
+            var serializer = new JsonSaveSerializer(false);
+
+            using (var older = new PooledBufferWriter())
+            using (var newer = new PooledBufferWriter())
+            {
+                serializer.Serialize(new TestData { Level = 1 }, typeof(TestData), older);
+                serializer.Serialize(new TestData { Level = 2 }, typeof(TestData), newer);
+
+                Assert.IsTrue(manager.WriteEntry(0, Key, newer.WrittenSegment, 2, out string writeError), writeError);
+                Assert.IsTrue(manager.WriteEntry(0, Key, older.WrittenSegment, 1, out writeError), writeError);
+            }
+
+            Assert.IsTrue(manager.TryLoad(Key, out TestData loaded, out string error), error);
+            Assert.AreEqual(2, loaded.Level, "an older snapshot overwrote a newer save");
+        }
+
+        [Test]
+        public void DeleteDefaultSlot_AlsoRemovesLegacySaves()
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(Path.Combine(root, Key + ".json"), "{\"Level\":9}");
+
+            SaveManager manager = Create(Options());
+            Assert.IsTrue(manager.DeleteSlot(0, out string error), error);
+
+            Assert.IsFalse(manager.TryLoad(Key, out TestData _, out error));
+            Assert.AreEqual("Save data not found.", error);
+        }
+
+        [Test]
+        public void Utf8Reader_PeekKeepsCharactersInOrder()
+        {
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes("ab\U0001F600c");
+            Utf8MemoryTextReader reader = Utf8MemoryTextReader.Get(bytes);
+
+            Assert.AreEqual('a', reader.Peek());
+            Assert.AreEqual('a', reader.Read());
+            Assert.AreEqual('b', reader.Read());
+
+            int high = reader.Read();
+            Assert.IsTrue(char.IsHighSurrogate((char)high));
+
+            int low = reader.Peek();
+            Assert.IsTrue(char.IsLowSurrogate((char)low));
+            Assert.AreEqual(low, reader.Read());
+            Assert.AreEqual('c', reader.Read());
+            Assert.AreEqual(-1, reader.Read());
+
+            reader.Release();
         }
 
         [Test]

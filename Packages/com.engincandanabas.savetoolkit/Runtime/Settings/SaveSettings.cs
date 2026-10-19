@@ -138,13 +138,31 @@ namespace SaveToolkit
         public string GetActiveStoreDefine()
         {
 #if UNITY_EDITOR
-            var group = UnityEditor.EditorUserBuildSettings.selectedBuildTargetGroup;
-            var target = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(group);
-            return FindStoreDefine(UnityEditor.PlayerSettings.GetScriptingDefineSymbols(target));
+            return FindStoreDefine(GetEditorDefines(UnityEditor.EditorUserBuildSettings.selectedBuildTargetGroup));
 #else
             return bakedStoreDefine;
 #endif
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Player Settings defines for the group plus, on Unity 6.2+, the
+        /// active Build Profile's defines, as one ';'-separated list.
+        /// </summary>
+        public static string GetEditorDefines(UnityEditor.BuildTargetGroup group)
+        {
+            var target = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(group);
+            string defines = UnityEditor.PlayerSettings.GetScriptingDefineSymbols(target);
+
+#if UNITY_6000_2_OR_NEWER
+            var profile = UnityEditor.Build.Profile.BuildProfile.GetActiveBuildProfile();
+            if (profile != null && profile.scriptingDefines != null && profile.scriptingDefines.Length > 0)
+                defines += ";" + string.Join(";", profile.scriptingDefines);
+#endif
+
+            return defines;
+        }
+#endif
 
         public static SavePlatform GetPlatform(RuntimePlatform platform)
         {

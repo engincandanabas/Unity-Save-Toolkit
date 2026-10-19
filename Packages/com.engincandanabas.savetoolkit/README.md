@@ -1,40 +1,40 @@
 # Save Toolkit
 
-Mobil (iOS/Android) ve PC/Steam oyunları için ScriptableObject ile yapılandırılan, düşük allocation'lı kayıt sistemi.
+A low-allocation save system for Unity mobile (iOS/Android) and PC/Steam games, configured with ScriptableObjects.
 
-- **Profiller:** Editor, Mobile, Desktop ve mağaza (Steam/Epic/itch…) için ayrı `SaveProfile` asset'leri tanımlanır. Aktif profil çalışma anında otomatik seçilir.
-- **Format:** JSON (Newtonsoft) yerleşik gelir. MessagePack opsiyonel bir modüldür ve projede MessagePack varsa kendiliğinden açılır.
-- **Güvenlik:** GZip sıkıştırma ve AES-256 + HMAC-SHA256 ile kurcalama tespiti.
-- **Dayanıklılık:**
-  - Atomik yazma.
-  - Dönüşümlü backup'lar. Ana dosya `File.Replace` ile bak1'e taşınır, kopyalama yapılmaz.
-  - Bozuk kayıtta otomatik olarak yedekten kurtarma.
-- **Sürüm ve slotlar:** `DataVersion` ile migration ve çoklu kayıt slotları.
-- **Async ve autosave:** async kayıt/yükleme; pause, focus kaybı, çıkış ve belirli aralıklarla autosave.
-- **Performans:** Pipeline'ın her aşaması `ArrayPool` tabanlı pooled buffer'larla çalışır. Senkron yolda closure yoktur. Debug log kapalıyken log string'i üretilmez.
+- **Profiles:** separate `SaveProfile` assets for Editor, Mobile, Desktop and stores (Steam/Epic/itch…), picked automatically at runtime.
+- **Formats:** JSON (Newtonsoft) built in. MessagePack is an optional module that turns on by itself when MessagePack is in the project.
+- **Security:** GZip compression and AES-256 + HMAC-SHA256 tamper detection.
+- **Reliability:**
+  - Atomic writes.
+  - Rotating backups: `File.Replace` moves the old file to `bak1`, no copying.
+  - Automatic recovery from the latest valid backup when a save is corrupted.
+- **Versioning and slots:** `DataVersion` migrations and multiple save slots.
+- **Async and autosave:** async save/load; autosave on pause, focus loss, quit or on an interval.
+- **Performance:** every pipeline stage runs on `ArrayPool`-backed buffers, the sync path has no closures, and no log strings are built while debug logging is off.
 
-## Kurulum
+## Installation
 
 Package Manager → **+** → **Add package from git URL**:
 
 ```
-https://github.com/engincandanabas/Unity-Save-Toolkit.git?path=Packages/com.engincandanabas.savetoolkit#v0.2.0
+https://github.com/engincandanabas/Unity-Save-Toolkit.git?path=Packages/com.engincandanabas.savetoolkit#v0.2.1
 ```
 
-Bağımlılık olarak yalnızca `com.unity.nuget.newtonsoft-json` paketi gelir ve otomatik kurulur. Minimum Unity sürümü 2022.3'tür.
+The only dependency, `com.unity.nuget.newtonsoft-json`, is installed automatically. Requires Unity 2022.3 or newer.
 
-Diğer kurulum yolları (dosyalar GitHub release'inde ya da `python Tools/build_packages.py` ile `Builds/` altında üretilir):
-- **UPM tarball:** `com.engincandanabas.savetoolkit-0.2.0.tgz` → Package Manager → **Add package from tarball**. Newtonsoft bağımlılığı otomatik kurulur.
-- **.unitypackage:** `SaveToolkit-0.2.0.unitypackage` → **Assets → Import Package**. Dosyalar `Assets/SaveToolkit` altına kopyalanır. Bu yöntem bağımlılık taşımadığı için `com.unity.nuget.newtonsoft-json` paketini kendiniz kurmalısınız. Paket Manager tarafından yönetilmediği için güncellemeleri elle yapmanız gerekir.
+Other options (files are attached to each [GitHub release](https://github.com/engincandanabas/Unity-Save-Toolkit/releases), or build them with `python Tools/build_packages.py`):
+- **UPM tarball:** `com.engincandanabas.savetoolkit-<version>.tgz` → Package Manager → **Add package from tarball**. Newtonsoft is installed automatically.
+- **.unitypackage:** `SaveToolkit-<version>.unitypackage` → **Assets → Import Package**. Files go to `Assets/SaveToolkit`. This format cannot declare dependencies, so install `com.unity.nuget.newtonsoft-json` yourself, and update by hand.
 
-**MessagePack (opsiyonel):** MessagePack'i [NuGetForUnity](https://github.com/GlitchEnzo/NuGetForUnity) ile kurun (`MessagePack`). Save Toolkit `SAVETOOLKIT_MESSAGEPACK` define'ını kendisi ekler ve `SaveToolkit.MessagePack` modülü derlenir. Bu davranışı `Tools/Save Toolkit/MessagePack Module` menüsünden kapatabilir veya elle yönetebilirsiniz.
+**MessagePack (optional):** install MessagePack with [NuGetForUnity](https://github.com/GlitchEnzo/NuGetForUnity). Save Toolkit adds the `SAVETOOLKIT_MESSAGEPACK` define itself and the `SaveToolkit.MessagePack` module compiles. Turn this off or manage it by hand under **Tools → Save Toolkit → MessagePack Module**.
 
-### İlk adımlar
-1. `Tools/Save Toolkit/Create Default Settings` menüsü `Assets/SaveToolkit/Settings/Resources/SaveSettings.asset` ve üç profil (Editor, Mobile, Steam) oluşturur. Hiçbir asset oluşturmasanız da sistem çalışır: `SaveController` yerleşik bir varsayılan profille (JSON dosyalar + backup) açılır ve bunu bir uyarıyla bildirir.
-2. Mobile profilinde şifreleme açıksa **`EncryptionPassphrase` ve `EncryptionSalt` değerlerini oyununuza özel değerlerle değiştirin.** Oyun yayınlandıktan sonra bu değerleri değiştirmeyin; değişirse mevcut şifreli kayıtlar açılamaz.
-3. Örnekler için: Package Manager → Save Toolkit → **Samples → Basic → Import**.
+### First steps
+1. **Tools → Save Toolkit → Create Default Settings** creates `Assets/SaveToolkit/Settings/Resources/SaveSettings.asset` and three profiles (Editor, Mobile, Steam). Without any asset the system still works: `SaveController` starts with a built-in default profile (JSON files with backups) and logs a warning.
+2. If encryption is on, **set your own `EncryptionPassphrase` and `EncryptionSalt`.** Never change them after release: existing encrypted saves would become unreadable.
+3. Samples: Package Manager → Save Toolkit → **Samples → Basic → Import**.
 
-## Kullanım
+## Usage
 
 ```csharp
 using SaveToolkit;
@@ -44,20 +44,20 @@ SaveController.Instance.TryLoad("player_progress", out PlayerProgress loaded, ou
 
 SaveResult result = await SaveController.Instance.SaveAsync("player_progress", progress);
 SaveResult<PlayerProgress> load = await SaveController.Instance.LoadAsync<PlayerProgress>("player_progress");
-if (load.NotFound) { /* yeni oyun */ }
+if (load.NotFound) { /* new game */ }
 
 SaveController.Instance.SetActiveSlot(1, out error);
 SaveController.Instance.TryGetSlotInfo(1, out SaveSlotInfo info, out error);
 ```
 
-`TryLoad` başarılı olduğunda `error` normalde `null` olur. Veri bir yedekten kurtarıldıysa `error` alanında bilgi notu döner. Uygulama kapanırken `SaveController.Instance` `null` döner; bu, kapanış sırasında yeni bir obje yaratılmasını önler.
+On success `TryLoad` leaves `error` null, or sets it to a note when the data was recovered from a backup. While the application quits, `SaveController.Instance` returns null so no new object is created during shutdown.
 
-### Autosave ve ISaveable
+### Autosave and ISaveable
 
 ```csharp
 public sealed class PlayerHealth : SaveableBehaviour<PlayerHealth.State>
 {
-    public sealed class State { public int Hp; }   // MessagePack + IL2CPP için: [MessagePackObject(true)]
+    public sealed class State { public int Hp; }   // MessagePack + IL2CPP: add [MessagePackObject(true)]
 
     private int hp = 100;
 
@@ -66,16 +66,16 @@ public sealed class PlayerHealth : SaveableBehaviour<PlayerHealth.State>
 }
 ```
 
-Inspector'dan bir `saveKey` verin. Bileşen etkin olduğu sürece `SaveAll` / `LoadAll` çağrılarına ve autosave'e dahil olur. `ISaveable` olmayan veriler için `SaveController.AutosaveRequested` event'ini dinleyin.
+Set a `saveKey` in the Inspector. While enabled, the component takes part in `SaveAll` / `LoadAll` and autosave. For data that is not an `ISaveable`, listen to `SaveController.AutosaveRequested`.
 
-| Tetikleyici | Profil alanı | Not |
+| Trigger | Profile field | Note |
 |---|---|---|
-| Uygulama arka plana alındığında | `AutosaveOnPause` | Senkron çalışır; mobil işletim sistemi uygulamayı her an kapatabilir |
-| Odak kaybı | `AutosaveOnFocusLost` | Pause ile art arda gelirse tek kayıt yapılır |
-| Çıkış | `AutosaveOnQuit` | Desktop |
-| Belirli aralık | `AutosaveIntervalSeconds` | Async çalışır |
+| App sent to background | `AutosaveOnPause` | Synchronous: mobile OSes may kill the app at any time |
+| Focus lost | `AutosaveOnFocusLost` | Saves once when it fires right after Pause |
+| Quit | `AutosaveOnQuit` | Desktop |
+| Interval | `AutosaveIntervalSeconds` | Asynchronous |
 
-### Migration
+### Migrations
 
 ```csharp
 SaveController.Instance.RegisterMigration(new SaveMigration("player_progress", 1, token =>
@@ -86,65 +86,65 @@ SaveController.Instance.RegisterMigration(new SaveMigration("player_progress", 1
 }));
 ```
 
-Profildeki `DataVersion`'ı artırın ve önceki sürümden bir migration kaydedin. Migration'lar ilk yüklemeden önce kaydedilmelidir. `SaveMigration.AnyKey` (`"*"`) tüm anahtarlara uygulanır.
+Bump `DataVersion` in the profile and register a migration from the previous version, before the first load that needs it. `SaveMigration.AnyKey` (`"*"`) applies to every key.
 
-## Profil seçimi
+## Profile selection
 
-Profil şu sırayla belirlenir:
-1. `OverrideProfile` atanmışsa her platformda o kullanılır.
-2. Editor'da `EditorProfile` kullanılır.
-3. `StoreProfiles` listesinde define'ı aktif olan **ilk** giriş kullanılır.
-4. Platform profili kullanılır: Android ve iOS için `MobileProfile`, Windows, macOS ve Linux build'leri için `DesktopProfile`.
-5. Hiçbiri yoksa `FallbackProfile` kullanılır.
+The profile is chosen in this order:
+1. `OverrideProfile`, when set, on every platform.
+2. `EditorProfile` in the Editor.
+3. The **first** `StoreProfiles` entry whose define is active.
+4. The platform profile: `MobileProfile` on Android and iOS, `DesktopProfile` on Windows, macOS and Linux players.
+5. `FallbackProfile`.
 
-**Mağaza profilleri** scripting define'larla eşlenir (`STEAM → Profile_Steam`, `EPIC → Profile_Epic`). Define'lar yalnızca derleme zamanında var olduğu için bir build hook'u, build öncesinde aktif define'ı `SaveSettings`'e yazar ve build bittikten sonra temizler. `BuildPlayerOptions.extraScriptingDefines` ile verilen define'lar bu hook tarafından görülmez; mağaza define'larını Player Settings'te tanımlayın. `SaveSettings` inspector'ındaki **Resolved Profiles** tablosu, her platform ve mağaza için hangi profilin kullanılacağını gösterir.
+**Store profiles** map scripting defines to profiles (`STEAM → Profile_Steam`, `EPIC → Profile_Epic`). Defines only exist at compile time, so a build hook writes the active define into `SaveSettings` before a player build and clears it afterwards. Defines passed through `BuildPlayerOptions.extraScriptingDefines` are not seen by the hook; declare store defines in Player Settings. The **Resolved Profiles** table in the `SaveSettings` Inspector shows which profile each platform and store will use.
 
-## Performans notları
+## Performance
 
-### Unity 6000.3 Editor (Mono), Windows, backup açık, `FlushToDisk` açık
-Ölçümler 200 iterasyonun ortalamasıdır; GC değerleri `GC Allocated In Frame` sayacından alınmıştır.
+### Unity 6000.3 Editor (Mono), Windows, backups on, `FlushToDisk` on
+Averages over 200 iterations; GC values from the `GC Allocated In Frame` counter.
 
-| Senaryo | Kayıt (alloc) | Kayıt (süre) | Yükleme (alloc) | Yükleme (süre) | Dosya |
+| Scenario | Save alloc | Save time | Load alloc | Load time | File |
 |---|---:|---:|---:|---:|---:|
-| JSON, küçük DTO | 14.2 KB | 3.6 ms | 6.3 KB | 0.40 ms | 83 B |
-| JSON, 10 KB veri | 29.2 KB | 6.2 ms | 35.9 KB | 2.4 ms | 7.6 KB |
-| MessagePack, 10 KB veri | 13.6 KB | 4.9 ms | 18.6 KB | 1.7 ms | 4.9 KB |
+| JSON, small DTO | 14.2 KB | 3.6 ms | 6.3 KB | 0.40 ms | 83 B |
+| JSON, 10 KB data | 29.2 KB | 6.2 ms | 35.9 KB | 2.4 ms | 7.6 KB |
+| MessagePack, 10 KB data | 13.6 KB | 4.9 ms | 18.6 KB | 1.7 ms | 4.9 KB |
 | MessagePack + GZip + AES, 10 KB | 19.2 KB | 10.1 ms | 44.0 KB | 1.2 ms | 1.2 KB |
 
-Pipeline'ın kendi maliyeti küçüktür: JSON serialize ~0.4 KB, envelope ~0.1 KB, buffer ~0.03 KB. Allocation'ın büyük bölümü Mono'nun dosya API'lerinden gelir:
+The pipeline itself is cheap: JSON serialization ~0.4 KB, envelope ~0.1 KB, buffer ~0.03 KB. Most allocations come from Mono's file APIs:
 
-| Çağrı | Ayrılan | Süre |
+| Call | Allocated | Time |
 |---|---:|---:|
-| `FileStream` açma | ~4.6 KB | ~0.5 ms |
+| Opening a `FileStream` | ~4.6 KB | ~0.5 ms |
 | `File.Replace` | ~3.3 KB | ~2 ms |
 | `File.Move` | ~2.2 KB | — |
 | `Directory.CreateDirectory` | ~2.4 KB | — |
 | `File.Exists` | ~1 KB | — |
 
-`FileSaveStorage` bu yüzden bilinen dosyaları ve oluşturulmuş klasörleri önbelleğe alır. Bunlar, kayıt dosyası olmadan kaçınılamayan maliyetlerdir.
+That is why `FileSaveStorage` caches known files and created folders. The rest is the unavoidable cost of writing a file.
 
-### .NET 8 (pipeline karşılaştırması, v0.1 → v0.2)
+### .NET 8 (pipeline only, v0.1 → v0.2)
 
-| Senaryo | v0.1 kayıt | v0.2 kayıt | v0.1 yükleme | v0.2 yükleme |
+| Scenario | v0.1 save | v0.2 save | v0.1 load | v0.2 load |
 |---|---:|---:|---:|---:|
-| JSON, küçük DTO | 17.5 KB | 1.4 KB | 6.3 KB | 0.55 KB |
-| MessagePack, 10 KB veri | 29.6 KB | 1.0 KB | 28.6 KB | 13.5 KB |
+| JSON, small DTO | 17.5 KB | 1.4 KB | 6.3 KB | 0.55 KB |
+| MessagePack, 10 KB data | 29.6 KB | 1.0 KB | 28.6 KB | 13.5 KB |
 
-### Öneriler
-- **Sık kayıt yapılan veriler:** MessagePack kullanın. Kayıtları tek anahtarda birleştirin (`SaveAll` her `ISaveable` için ayrı dosya yazar).
-- **`BackupCount = 1`:** Rotasyondaki ek `File.Move`'u ortadan kaldırır (~2 KB ve ~1 ms).
-- **`FlushToDisk`:** Kapatıldığında fsync atlanır (Windows'ta ~0.7 ms). Elektrik kesintisi riskini kabul ediyorsanız kapatın.
-- **PlayerPrefs:** Yalnızca string tuttuğu için her işlemde Base64 string'i ayırır. Mümkünse dosya storage'ı kullanın.
-- **Büyük kayıtlar:** `ArrayPool` ~1 MB üzerindeki buffer'ları havuzlamaz. Çok büyük kayıtları birden fazla anahtara bölün.
+### Tips
+- **Frequent saves:** prefer MessagePack and group data under fewer keys (`SaveAll` writes one file per `ISaveable`).
+- **`BackupCount = 1`:** removes the extra `File.Move` during rotation (~2 KB and ~1 ms).
+- **`FlushToDisk`:** turning it off skips fsync (~0.7 ms on Windows) at the risk of losing the latest write on power loss.
+- **PlayerPrefs:** it only stores strings, so every operation allocates a Base64 string. Prefer file storage where possible.
+- **Large saves:** `ArrayPool` does not pool buffers above ~1 MB. Split very large saves across keys.
 
-## Platform notları
+## Platform notes
 
-### Mobil (IL2CPP)
-- MessagePack ile kaydedilen her tipte `[MessagePackObject]` olmalıdır. Private setter kullanılıyorsa tip `partial` da olmalıdır. Editor bu durumda bir kez uyarı verir.
-- Paket assembly'leri `[assembly: Preserve]` ile stripping'e karşı korunur. Kendi kayıt tiplerinizi `[Preserve]` ile işaretleyin ya da `Assets` altındaki bir `link.xml`'e ekleyin.
+### Mobile (IL2CPP)
+- Every type saved with MessagePack needs `[MessagePackObject]`; types with private setters must also be `partial`. The Editor warns once per type.
+- Package assemblies are protected from stripping with `[assembly: Preserve]`. Mark your own save types with `[Preserve]` or list them in a `link.xml` under `Assets`.
 
 ### Steam Cloud (Auto-Cloud)
-Kayıtlar `Application.persistentDataPath/<SaveDirectory>/slot_N/*.sav` altına yazılır.
+Saves are written to `Application.persistentDataPath/<SaveDirectory>/slot_N/*.sav`.
 
 | Root | Subdirectory | Pattern | OS |
 |---|---|---|---|
@@ -152,20 +152,20 @@ Kayıtlar `Application.persistentDataPath/<SaveDirectory>/slot_N/*.sav` altına 
 | `MacAppSupport` | `unity.<Company>.<Product>/Saves` | `*.sav*` (recursive) | macOS |
 | `LinuxXdgDataHome` | `unity3d/<Company>/<Product>/Saves` | `*.sav*` (recursive) | Linux |
 
-Şifreleme anahtarı cihazdan bağımsız olduğu için kayıtlar başka bir makinede de açılır. Bulut storage eklemek için `ISaveStorage` arayüzünü implement edip `new SaveManager(options, storage)` ile kullanın.
+The encryption key does not depend on the device, so saves open on other machines too. For cloud backends, implement `ISaveStorage` and pass it to `new SaveManager(options, storage)`.
 
-## Genişletme
-- **Özel format:** `SaveSerializerRegistry.Register(format, options => new MySerializer())`. `ISaveSerializer`, sonucu `IBufferWriter<byte>`'a yazar ve `ReadOnlyMemory<byte>`'tan okur.
-- **Özel storage:** `ISaveStorage` arayüzünü implement edin. `Write`, header ve payload'u ayrı span'lar olarak alır ve isteğe bağlı bir backup yolu kabul eder.
+## Extending
+- **Custom format:** `SaveSerializerRegistry.Register(format, options => new MySerializer())`. An `ISaveSerializer` writes to an `IBufferWriter<byte>` and reads from `ReadOnlyMemory<byte>`.
+- **Custom storage:** implement `ISaveStorage`. `Write` receives the header and payload as separate spans plus an optional backup path.
 
-## Dosya formatı
-Her kayıt 32 byte'lık bir başlıkla başlar: `STK2` magic, format, sıkıştırma, şifreleme bayrağı, `DataVersion`, payload uzunluğu ve SHA-256 checksum. Payload başlığın ardından gelir. Okuma tarafı ayarları profilden değil başlıktan alır; bu yüzden profil değişse bile eski kayıtlar okunur. Bozuk kayıtlar silinmez, incelenebilmeleri için `.corrupt` uzantısıyla kenara alınır.
+## File format
+Each save starts with a 32-byte header: `STK2` magic, format, compression, encryption flag, `DataVersion`, payload length and a SHA-256 checksum, followed by the payload. Reads take their settings from the header, not the profile, so old saves stay readable after a profile change. Corrupted saves are never deleted; they are kept with a `.corrupt` extension for inspection.
 
-## Testler
-Paket testlerini görmek için projenin `Packages/manifest.json` dosyasına şunu ekleyin:
+## Tests
+To see the package tests, add this to the project's `Packages/manifest.json`:
 
 ```json
 "testables": ["com.engincandanabas.savetoolkit"]
 ```
 
-Ardından `Window → General → Test Runner → EditMode` üzerinden çalıştırın. MessagePack testleri yalnızca modül aktifken görünür.
+Then run them from **Window → General → Test Runner → EditMode**. MessagePack tests appear only while the module is active.
